@@ -1,82 +1,57 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Clock, Brain, Target, TrendingUp, Award, Users } from "lucide-react";
-import axios from "axios";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { Clock, Brain, Target } from "lucide-react";
 
 const LandingPage = () => {
   const navigate = useNavigate();
-  const [age, setAge] = useState("");
-  const [testType, setTestType] = useState("standard");
-  const [stats, setStats] = useState({ total_tests_taken: 0, average_iq: 100 });
-  const [showAgeError, setShowAgeError] = useState(false);
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
+  const [duration, setDuration] = useState("medium");
+  const [questionTypes, setQuestionTypes] = useState(["all"]);
+  const [difficulty, setDifficulty] = useState("medium");
 
-  const fetchStats = async () => {
-    try {
-      const response = await axios.get(`${API}/stats`);
-      setStats(response.data);
-    } catch (error) {
-      console.error("Error fetching stats:", error);
+  const toggleQuestionType = (type) => {
+    if (type === "all") {
+      setQuestionTypes(["all"]);
+    } else {
+      if (questionTypes.includes("all")) {
+        setQuestionTypes([type]);
+      } else {
+        if (questionTypes.includes(type)) {
+          const newTypes = questionTypes.filter((t) => t !== type);
+          setQuestionTypes(newTypes.length === 0 ? ["all"] : newTypes);
+        } else {
+          setQuestionTypes([...questionTypes, type]);
+        }
+      }
     }
   };
 
   const handleStartTest = () => {
-    const ageNum = parseInt(age);
-    if (!age || ageNum < 10 || ageNum > 100) {
-      setShowAgeError(true);
-      return;
-    }
-    setShowAgeError(false);
-    const config = { age: ageNum, test_type: testType };
+    const config = { duration, question_types: questionTypes, difficulty };
     navigate("/test", { state: { config } });
   };
 
   return (
     <div className="landing-hero">
       <div className="hero-content">
+        <div className="flex items-center justify-center mb-6">
+          <img
+            src="https://images.unsplash.com/photo-1744324472890-d4cac1650e2e?w=120&h=120&fit=crop"
+            alt="TestIQ Logo"
+            className="w-20 h-20 rounded-lg shadow-lg"
+          />
+        </div>
         <h1 className="hero-title" data-testid="hero-title">
-          MindMeter IQ
+          TestIQ
         </h1>
         <h2 className="hero-subtitle" data-testid="hero-subtitle">
-          Professional Cognitive Assessment
+          Discover your cognitive potential
         </h2>
         <p className="hero-description" data-testid="hero-description">
-          Take our scientifically-designed IQ test with age-normalized scoring.
-          Join over {stats.total_tests_taken.toLocaleString()}+ people who have
-          discovered their cognitive potential.
+          A comprehensive IQ test with carefully selected questions. Configure
+          the test the way you like and get an instant IQ estimate. No signup
+          required.
         </p>
-      </div>
-
-      <div className="stats-banner">
-        <div className="stat-item">
-          <Users size={24} color="#7c3aed" />
-          <div>
-            <div className="stat-value">
-              {stats.total_tests_taken.toLocaleString()}+
-            </div>
-            <div className="stat-label">Tests Taken</div>
-          </div>
-        </div>
-        <div className="stat-item">
-          <TrendingUp size={24} color="#7c3aed" />
-          <div>
-            <div className="stat-value">{stats.average_iq}</div>
-            <div className="stat-label">Average IQ</div>
-          </div>
-        </div>
-        <div className="stat-item">
-          <Award size={24} color="#7c3aed" />
-          <div>
-            <div className="stat-value">98th</div>
-            <div className="stat-label">Top Percentile</div>
-          </div>
-        </div>
       </div>
 
       <div className="features-grid">
@@ -84,100 +59,152 @@ const LandingPage = () => {
           <div className="feature-icon">
             <Clock size={32} color="#7c3aed" />
           </div>
-          <h3 className="feature-title">Flexible Testing</h3>
+          <h3 className="feature-title">Flexible duration</h3>
           <p className="feature-text">
-            Choose from quick, standard, or comprehensive test formats.
+            Choose from short, medium or long test sessions.
           </p>
         </div>
         <div className="feature-card" data-testid="feature-categories">
           <div className="feature-icon">
             <Brain size={32} color="#7c3aed" />
           </div>
-          <h3 className="feature-title">Multi-Domain Assessment</h3>
+          <h3 className="feature-title">Multiple categories</h3>
           <p className="feature-text">
-            Pattern recognition, logical reasoning, mathematics & verbal skills.
+            Pattern, math and verbal reasoning questions.
           </p>
         </div>
         <div className="feature-card" data-testid="feature-results">
           <div className="feature-icon">
             <Target size={32} color="#7c3aed" />
           </div>
-          <h3 className="feature-title">Age-Normalized Scoring</h3>
+          <h3 className="feature-title">Instant results</h3>
           <p className="feature-text">
-            Get accurate IQ scores adjusted for your age group.
+            Get your IQ score right after finishing the test.
           </p>
         </div>
       </div>
 
       <div className="config-section">
         <h2 className="config-title" data-testid="config-title">
-          Begin Your Assessment
+          Configure your test
         </h2>
 
         <div className="config-group">
-          <label className="config-label" data-testid="age-label">
-            Enter Your Age
+          <label className="config-label" data-testid="duration-label">
+            Test duration
           </label>
-          <input
-            type="number"
-            className={`age-input ${showAgeError ? "error" : ""}`}
-            placeholder="Enter your age (10-100)"
-            value={age}
-            onChange={(e) => {
-              setAge(e.target.value);
-              setShowAgeError(false);
-            }}
-            min="10"
-            max="100"
-            data-testid="age-input"
-          />
-          {showAgeError && (
-            <div className="error-message">
-              Please enter a valid age between 10 and 100
+          <div className="duration-options">
+            <div
+              className={`duration-card ${
+                duration === "short" ? "selected" : ""
+              }`}
+              onClick={() => setDuration("short")}
+              data-testid="duration-short"
+            >
+              <div className="duration-name">Short</div>
+              <div className="duration-details">5 questions · ~5 min</div>
             </div>
-          )}
-          <p className="input-hint">
-            Age is required for accurate IQ score normalization
-          </p>
+            <div
+              className={`duration-card ${
+                duration === "medium" ? "selected" : ""
+              }`}
+              onClick={() => setDuration("medium")}
+              data-testid="duration-medium"
+            >
+              <div className="duration-name">Medium</div>
+              <div className="duration-details">10 questions · ~10 min</div>
+            </div>
+            <div
+              className={`duration-card ${
+                duration === "long" ? "selected" : ""
+              }`}
+              onClick={() => setDuration("long")}
+              data-testid="duration-long"
+            >
+              <div className="duration-name">Long</div>
+              <div className="duration-details">20 questions · ~20 min</div>
+            </div>
+          </div>
         </div>
 
         <div className="config-group">
-          <label className="config-label" data-testid="test-type-label">
-            Test Type
+          <label className="config-label" data-testid="types-label">
+            Question types
           </label>
-          <div className="test-type-options">
-            <div
-              className={`test-type-card ${
-                testType === "quick" ? "selected" : ""
+          <div className="type-buttons">
+            <button
+              className={`type-btn ${
+                questionTypes.includes("all") ? "selected" : ""
               }`}
-              onClick={() => setTestType("quick")}
-              data-testid="test-type-quick"
+              onClick={() => toggleQuestionType("all")}
+              data-testid="type-all"
             >
-              <div className="test-type-name">Quick</div>
-              <div className="test-type-details">20 questions · ~20 min</div>
-              <div className="test-type-desc">Fast assessment</div>
+              All types
+            </button>
+            <button
+              className={`type-btn ${
+                questionTypes.includes("pattern") ? "selected" : ""
+              }`}
+              onClick={() => toggleQuestionType("pattern")}
+              data-testid="type-pattern"
+            >
+              Pattern recognition
+            </button>
+            <button
+              className={`type-btn ${
+                questionTypes.includes("math") ? "selected" : ""
+              }`}
+              onClick={() => toggleQuestionType("math")}
+              data-testid="type-math"
+            >
+              Mathematical
+            </button>
+            <button
+              className={`type-btn ${
+                questionTypes.includes("verbal") ? "selected" : ""
+              }`}
+              onClick={() => toggleQuestionType("verbal")}
+              data-testid="type-verbal"
+            >
+              Verbal
+            </button>
+          </div>
+        </div>
+
+        <div className="config-group">
+          <label className="config-label" data-testid="difficulty-label">
+            Difficulty level
+          </label>
+          <div className="difficulty-options">
+            <div
+              className={`difficulty-card ${
+                difficulty === "easy" ? "selected" : ""
+              }`}
+              onClick={() => setDifficulty("easy")}
+              data-testid="difficulty-easy"
+            >
+              <div className="difficulty-level">Easy</div>
+              <div className="difficulty-desc">Beginner friendly</div>
             </div>
             <div
-              className={`test-type-card ${
-                testType === "standard" ? "selected" : ""
+              className={`difficulty-card ${
+                difficulty === "medium" ? "selected" : ""
               }`}
-              onClick={() => setTestType("standard")}
-              data-testid="test-type-standard"
+              onClick={() => setDifficulty("medium")}
+              data-testid="difficulty-medium"
             >
-              <div className="test-type-name">Standard</div>
-              <div className="test-type-details">30 questions · ~30 min</div>
-              <div className="test-type-desc">Recommended</div>
+              <div className="difficulty-level">Medium</div>
+              <div className="difficulty-desc">Standard level</div>
             </div>
             <div
-              className={`test-type-card ${
-                testType === "comprehensive" ? "selected" : ""
+              className={`difficulty-card ${
+                difficulty === "hard" ? "selected" : ""
               }`}
-              onClick={() => setTestType("comprehensive")}
-              data-testid="test-type-comprehensive"
+              onClick={() => setDifficulty("hard")}
+              data-testid="difficulty-hard"
             >
-              <div className="test-type-name">Comprehensive</div>
-              <div className="test-type-details">50 questions · ~50 min</div>
-              <div className="test-type-desc">Most accurate</div>
+              <div className="difficulty-level">Hard</div>
+              <div className="difficulty-desc">Advanced</div>
             </div>
           </div>
         </div>
@@ -187,38 +214,11 @@ const LandingPage = () => {
           onClick={handleStartTest}
           data-testid="start-test-btn"
         >
-          Start IQ Assessment
+          Start IQ test
         </button>
 
-        <div className="test-info">
-          <h4>What You'll Get:</h4>
-          <ul>
-            <li>✓ Age-normalized IQ score</li>
-            <li>✓ Percentile ranking</li>
-            <li>✓ Detailed performance analysis</li>
-            <li>✓ Category-wise breakdown</li>
-            <li>✓ Downloadable certificate</li>
-          </ul>
-        </div>
-
-        <p className="disclaimer">
-          Professional-grade assessment · Free results · Certificate included
-        </p>
+        <p className="disclaimer">Instant results · No registration required</p>
       </div>
-
-      <a
-        href="https://app.emergent.sh/?utm_source=emergent-badge"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="emergent-badge"
-        data-testid="emergent-badge"
-      >
-        <img
-          src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4"
-          alt="Emergent"
-        />
-        <span>Made with Emergent</span>
-      </a>
     </div>
   );
 };
