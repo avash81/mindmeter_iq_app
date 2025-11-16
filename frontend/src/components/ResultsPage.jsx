@@ -4,6 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Brain,
   Trophy,
@@ -12,6 +21,8 @@ import {
   RotateCcw,
   Home,
   Share2,
+  Download,
+  Award,
 } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
@@ -20,21 +31,28 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 const ResultsPage = () => {
-  const { sessionId } = useParams();
+  const { testId } = useParams();
   const navigate = useNavigate();
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showCertModal, setShowCertModal] = useState(false);
+  const [certForm, setCertForm] = useState({
+    name: "",
+    email: "",
+    contact: "",
+  });
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
-    if (sessionId) {
+    if (testId) {
       fetchResults();
     }
-  }, [sessionId]);
+  }, [testId]);
 
   const fetchResults = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API}/test/result/${sessionId}`);
+      const response = await axios.get(`${API}/test/result/${testId}`);
       setResults(response.data);
     } catch (error) {
       console.error("Failed to fetch results:", error);
@@ -46,7 +64,7 @@ const ResultsPage = () => {
   };
 
   const getPerformanceColor = (level) => {
-    switch (level.toLowerCase()) {
+    switch (level?.toLowerCase()) {
       case "superior":
         return "bg-purple-100 text-purple-700 border-purple-200";
       case "above average":
@@ -91,6 +109,51 @@ const ResultsPage = () => {
     }
   };
 
+  const handleDownloadCertificate = async () => {
+    if (!certForm.name.trim()) {
+      toast.error("Please enter your name");
+      return;
+    }
+
+    try {
+      setDownloading(true);
+      const response = await axios.post(
+        `${API}/certificate/download`,
+        {
+          test_id: testId,
+          name: certForm.name,
+          email: certForm.email,
+          contact: certForm.contact,
+        },
+        {
+          responseType: "blob",
+        }
+      );
+
+      const blob = new Blob([response.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute(
+        "download",
+        `MindMeter_Certificate_${certForm.name.replace(/ /g, "_")}.pdf`
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast.success("Certificate downloaded successfully!");
+      setShowCertModal(false);
+      setCertForm({ name: "", email: "", contact: "" });
+    } catch (error) {
+      console.error("Failed to download certificate:", error);
+      toast.error("Failed to download certificate. Please try again.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
@@ -117,11 +180,15 @@ const ResultsPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* Header */}
+      {/* Header with Logo */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="mindmeter-logo">
+            <div
+              className="mindmeter-logo"
+              onClick={() => navigate("/")}
+              data-testid="logo-home-link"
+            >
               <div className="mindmeter-icon"></div>
               <span>MindMeter</span>
             </div>
@@ -232,6 +299,35 @@ const ResultsPage = () => {
           </CardContent>
         </Card>
 
+        {/* Certificate Download Card */}
+        <Card className="mb-8 shadow-lg border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center">
+                  <Award className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg text-gray-900">
+                    Download Your Certificate
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Get a personalized certificate with your results
+                  </p>
+                </div>
+              </div>
+              <Button
+                onClick={() => setShowCertModal(true)}
+                className="btn-primary text-white flex items-center gap-2"
+                data-testid="download-certificate-button"
+              >
+                <Download className="w-4 h-4" />
+                Download
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* IQ Scale Explanation */}
         <Card className="mb-8 shadow-lg border-0">
           <CardHeader>
@@ -282,7 +378,7 @@ const ResultsPage = () => {
             Back to Home
           </Button>
           <Button
-            onClick={() => navigate("/test")}
+            onClick={() => navigate("/")}
             size="lg"
             className="btn-primary text-white flex items-center gap-2 px-8 py-3"
             data-testid="retake-test-button"
@@ -301,6 +397,79 @@ const ResultsPage = () => {
           </p>
         </div>
       </div>
+
+      {/* Certificate Download Modal */}
+      <Dialog open={showCertModal} onOpenChange={setShowCertModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Award className="w-5 h-5 text-purple-600" />
+              Download Your Certificate
+            </DialogTitle>
+            <DialogDescription>
+              Please provide your details to generate your personalized
+              certificate.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Full Name *</Label>
+              <Input
+                id="name"
+                placeholder="Enter your full name"
+                value={certForm.name}
+                onChange={(e) =>
+                  setCertForm({ ...certForm, name: e.target.value })
+                }
+                data-testid="cert-name-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email (Optional)</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="your.email@example.com"
+                value={certForm.email}
+                onChange={(e) =>
+                  setCertForm({ ...certForm, email: e.target.value })
+                }
+                data-testid="cert-email-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contact">Contact Number (Optional)</Label>
+              <Input
+                id="contact"
+                type="tel"
+                placeholder="+1 234 567 8900"
+                value={certForm.contact}
+                onChange={(e) =>
+                  setCertForm({ ...certForm, contact: e.target.value })
+                }
+                data-testid="cert-contact-input"
+              />
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowCertModal(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDownloadCertificate}
+              disabled={downloading || !certForm.name.trim()}
+              className="flex-1 btn-primary text-white"
+              data-testid="cert-download-button"
+            >
+              {downloading ? "Downloading..." : "Download Certificate"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

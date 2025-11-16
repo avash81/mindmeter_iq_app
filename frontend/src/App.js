@@ -1,4 +1,3 @@
-import { useState } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import LandingPage from "@/components/LandingPage";
@@ -12,7 +11,7 @@ function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/test" element={<TestPage />} />
-          <Route path="/results" element={<ResultsPage />} />
+          <Route path="/results/:testId" element={<ResultsPage />} />
         </Routes>
       </BrowserRouter>
     </div>

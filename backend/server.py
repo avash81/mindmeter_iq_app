@@ -1,229 +1,473 @@
-# Initialize sample questions data
-async def initialize_sample_questions():
-    # Check if questions already exist
-    existing_count = await db.iq_questions.count_documents({})
-    if existing_count >= 10:  # Changed to ensure we have enough questions
-        return
-    
-    # Clear existing questions to start fresh
-    await db.iq_questions.delete_many({})
-    
-    # Comprehensive matrix reasoning questions bank
-    sample_questions = [
+from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+import os
+import logging
+from pathlib import Path
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Optional
+import uuid
+from datetime import datetime, timezone
+import random
+import io
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+
+# Load environment variables
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+# MongoDB Connection
+MONGO_URL = os.environ.get('MONGO_URL')
+DB_NAME = os.environ.get('DB_NAME', 'mindmeter_db')
+
+if not MONGO_URL:
+    raise Exception("MONGO_URL missing in .env")
+
+try:
+    client = AsyncIOMotorClient(
+        MONGO_URL,
+        uuidRepresentation='standard',
+        serverSelectionTimeoutMS=5000
+    )
+    db = client[DB_NAME]
+    logging.info("Connected to MongoDB")
+except Exception as e:
+    logging.error(f"MongoDB Error: {e}")
+    raise HTTPException(status_code=500, detail="Database connection failed")
+
+# FastAPI App Setup
+app = FastAPI(title="MindMeter IQ API", version="1.0.0", description="Intelligence Testing Platform API")
+api_router = APIRouter(prefix="/api")
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# MODELS
+class Question(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    question_text: str
+    options: List[str]
+    correct_answer: int
+    category: str
+    difficulty: str
+
+class TestConfig(BaseModel):
+    duration: str
+    question_types: List[str]
+    difficulty: str
+
+class TestResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    test_id: str
+    correct_answers: int
+    total_questions: int
+    iq_score: int
+    accuracy_percentage: float
+    performance_level: str
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class TestResultCreate(BaseModel):
+    test_id: str
+    answers: List[int]
+
+class CertificateRequest(BaseModel):
+    test_id: str
+    name: str
+    email: Optional[str] = None
+    contact: Optional[str] = None
+
+# QUESTIONS BANK
+QUESTIONS_BANK = [
+    {
+        "question_text": "What number comes next in the sequence: 2, 4, 8, 16, ?",
+        "options": ["24", "32", "20", "18"],
+        "correct_answer": 1,
+        "category": "math",
+        "difficulty": "easy"
+    },
+    {
+        "question_text": "If all roses are flowers and some flowers fade quickly, can we conclude that some roses fade quickly?",
+        "options": ["Yes", "No", "Cannot be determined", "Only in summer"],
+        "correct_answer": 2,
+        "category": "verbal",
+        "difficulty": "medium"
+    },
+    {
+        "question_text": "Which number doesn't belong: 2, 3, 5, 7, 9, 11?",
+        "options": ["2", "9", "7", "11"],
+        "correct_answer": 1,
+        "category": "pattern",
+        "difficulty": "medium"
+    },
+    {
+        "question_text": "What is 15% of 200?",
+        "options": ["30", "25", "35", "20"],
+        "correct_answer": 0,
+        "category": "math",
+        "difficulty": "easy"
+    },
+    {
+        "question_text": "Book is to Reading as Fork is to ?",
+        "options": ["Drawing", "Writing", "Eating", "Stirring"],
+        "correct_answer": 2,
+        "category": "verbal",
+        "difficulty": "easy"
+    },
+    {
+        "question_text": "Complete the pattern: 1, 1, 2, 3, 5, 8, ?",
+        "options": ["11", "13", "12", "15"],
+        "correct_answer": 1,
+        "category": "pattern",
+        "difficulty": "medium"
+    },
+    {
+        "question_text": "If 5x + 3 = 18, what is x?",
+        "options": ["3", "4", "5", "2"],
+        "correct_answer": 0,
+        "category": "math",
+        "difficulty": "medium"
+    },
+    {
+        "question_text": "What comes next: A, C, E, G, ?",
+        "options": ["H", "I", "J", "K"],
+        "correct_answer": 1,
+        "category": "pattern",
+        "difficulty": "easy"
+    },
+    {
+        "question_text": "Which word is the odd one out: Dog, Cat, Lion, Table, Tiger?",
+        "options": ["Dog", "Table", "Lion", "Tiger"],
+        "correct_answer": 1,
+        "category": "verbal",
+        "difficulty": "easy"
+    },
+    {
+        "question_text": "What is the square root of 144?",
+        "options": ["11", "12", "13", "14"],
+        "correct_answer": 1,
+        "category": "math",
+        "difficulty": "easy"
+    },
+    {
+        "question_text": "Complete: 3, 6, 12, 24, ?",
+        "options": ["36", "48", "42", "30"],
+        "correct_answer": 1,
+        "category": "pattern",
+        "difficulty": "medium"
+    },
+    {
+        "question_text": "If you rearrange the letters 'CIFAIPC' you would have the name of a(n):",
+        "options": ["City", "Animal", "Ocean", "Country"],
+        "correct_answer": 2,
+        "category": "verbal",
+        "difficulty": "hard"
+    },
+    {
+        "question_text": "What is 7 x 8?",
+        "options": ["54", "56", "58", "52"],
+        "correct_answer": 1,
+        "category": "math",
+        "difficulty": "easy"
+    },
+    {
+        "question_text": "What comes next: 100, 50, 25, 12.5, ?",
+        "options": ["6.25", "6", "7", "5"],
+        "correct_answer": 0,
+        "category": "pattern",
+        "difficulty": "medium"
+    },
+    {
+        "question_text": "Pen is to Writer as Brush is to ?",
+        "options": ["Paper", "Painter", "Color", "Canvas"],
+        "correct_answer": 1,
+        "category": "verbal",
+        "difficulty": "easy"
+    },
+    {
+        "question_text": "If 3x - 7 = 11, what is x?",
+        "options": ["5", "6", "7", "8"],
+        "correct_answer": 1,
+        "category": "math",
+        "difficulty": "medium"
+    },
+    {
+        "question_text": "Complete the sequence: 2, 6, 12, 20, 30, ?",
+        "options": ["40", "42", "44", "38"],
+        "correct_answer": 1,
+        "category": "pattern",
+        "difficulty": "hard"
+    },
+    {
+        "question_text": "Which word means the opposite of 'Ancient'?",
+        "options": ["Old", "Modern", "Historic", "Antique"],
+        "correct_answer": 1,
+        "category": "verbal",
+        "difficulty": "easy"
+    },
+    {
+        "question_text": "What is 25% of 80?",
+        "options": ["15", "20", "25", "30"],
+        "correct_answer": 1,
+        "category": "math",
+        "difficulty": "easy"
+    },
+    {
+        "question_text": "Find the next number: 1, 4, 9, 16, 25, ?",
+        "options": ["30", "35", "36", "49"],
+        "correct_answer": 2,
+        "category": "pattern",
+        "difficulty": "medium"
+    }
+]
+
+def get_performance_level(accuracy):
+    if accuracy >= 90:
+        return "Superior"
+    elif accuracy >= 75:
+        return "Above Average"
+    elif accuracy >= 60:
+        return "High Average"
+    elif accuracy >= 40:
+        return "Average"
+    else:
+        return "Below Average"
+
+# ROUTES
+@api_router.get("/")
+async def root():
+    return {"message": "MindMeter IQ API - Intelligence Testing Platform"}
+
+@api_router.get("/stats")
+async def get_stats():
+    try:
+        total_tests = await db.test_results.count_documents({})
+        return {"total_tests": total_tests, "status": "operational"}
+    except:
+        return {"total_tests": 0, "status": "operational"}
+
+@api_router.post("/test/start")
+async def start_test(config: TestConfig):
+    num_questions = {
+        "short": 5,
+        "medium": 10,
+        "long": 20
+    }.get(config.duration, 10)
+
+    filtered_questions = []
+    for q in QUESTIONS_BANK:
+        if q["difficulty"] != config.difficulty:
+            continue
+        if "all" not in config.question_types:
+            if q["category"] not in config.question_types:
+                continue
+        filtered_questions.append(q)
+
+    if len(filtered_questions) < num_questions:
+        filtered_questions = [
+            q for q in QUESTIONS_BANK
+            if "all" in config.question_types or q["category"] in config.question_types
+        ]
+
+    random.shuffle(filtered_questions)
+    selected_questions = filtered_questions[:num_questions]
+
+    test_id = str(uuid.uuid4())
+
+    questions_for_frontend = [
         {
-            \"question_type\": \"matrix_reasoning\",
-            \"difficulty\": \"easy\",
-            \"question_text\": \"Which figure logically belongs on the spot of the question mark?\",
-            \"pattern_data\": {
-                \"grid\": [
-                    [{\"pattern\": \"horizontal_lines_3\"}, {\"pattern\": \"vertical_lines_3\"}, {\"pattern\": \"diagonal_lines_3\"}],
-                    [{\"pattern\": \"horizontal_lines_2\"}, {\"pattern\": \"vertical_lines_2\"}, {\"pattern\": \"diagonal_lines_2\"}],
-                    [{\"pattern\": \"horizontal_lines_1\"}, {\"pattern\": \"vertical_lines_1\"}, {\"pattern\": \"missing\"}]
-                ]
-            },
-            \"options\": [
-                {\"pattern\": \"diagonal_lines_1\"},
-                {\"pattern\": \"horizontal_lines_1\"}, 
-                {\"pattern\": \"vertical_lines_3\"},
-                {\"pattern\": \"diagonal_lines_3\"}
-            ],
-            \"correct_answer\": 0,
-            \"explanation\": \"The pattern decreases from 3 lines to 1 line in each column, so the missing piece should have 1 diagonal line.\",
-            \"time_limit_seconds\": 60
-        },
-        {
-            \"question_type\": \"matrix_reasoning\",
-            \"difficulty\": \"easy\",
-            \"question_text\": \"Which figure logically belongs on the spot of the question mark?\",
-            \"pattern_data\": {
-                \"grid\": [
-                    [{\"pattern\": \"square_filled\"}, {\"pattern\": \"circle_filled\"}, {\"pattern\": \"triangle_filled\"}],
-                    [{\"pattern\": \"square_empty\"}, {\"pattern\": \"circle_empty\"}, {\"pattern\": \"triangle_empty\"}],
-                    [{\"pattern\": \"square_half\"}, {\"pattern\": \"circle_half\"}, {\"pattern\": \"missing\"}]
-                ]
-            },
-            \"options\": [
-                {\"pattern\": \"triangle_half\"},
-                {\"pattern\": \"square_filled\"},
-                {\"pattern\": \"circle_half\"},
-                {\"pattern\": \"triangle_filled\"}
-            ],
-            \"correct_answer\": 0,
-            \"explanation\": \"Each row shows the same shapes with different fill patterns: filled, empty, then half-filled.\",
-            \"time_limit_seconds\": 75
-        },
-        {
-            \"question_type\": \"matrix_reasoning\",
-            \"difficulty\": \"medium\",
-            \"question_text\": \"Which figure logically belongs on the spot of the question mark?\",
-            \"pattern_data\": {
-                \"grid\": [
-                    [{\"pattern\": \"horizontal_lines_1\"}, {\"pattern\": \"horizontal_lines_2\"}, {\"pattern\": \"horizontal_lines_3\"}],
-                    [{\"pattern\": \"vertical_lines_1\"}, {\"pattern\": \"vertical_lines_2\"}, {\"pattern\": \"vertical_lines_3\"}],
-                    [{\"pattern\": \"diagonal_lines_1\"}, {\"pattern\": \"diagonal_lines_2\"}, {\"pattern\": \"missing\"}]
-                ]
-            },
-            \"options\": [
-                {\"pattern\": \"diagonal_lines_3\"},
-                {\"pattern\": \"horizontal_lines_3\"},
-                {\"pattern\": \"vertical_lines_1\"},
-                {\"pattern\": \"diagonal_lines_1\"}
-            ],
-            \"correct_answer\": 0,
-            \"explanation\": \"Each row follows the pattern of increasing line count from 1 to 3.\",
-            \"time_limit_seconds\": 70
-        },
-        {
-            \"question_type\": \"matrix_reasoning\",
-            \"difficulty\": \"medium\",
-            \"question_text\": \"Which figure logically belongs on the spot of the question mark?\",
-            \"pattern_data\": {
-                \"grid\": [
-                    [{\"pattern\": \"circle_filled\"}, {\"pattern\": \"square_filled\"}, {\"pattern\": \"triangle_filled\"}],
-                    [{\"pattern\": \"circle_half\"}, {\"pattern\": \"square_half\"}, {\"pattern\": \"triangle_half\"}],
-                    [{\"pattern\": \"circle_empty\"}, {\"pattern\": \"square_empty\"}, {\"pattern\": \"missing\"}]
-                ]
-            },
-            \"options\": [
-                {\"pattern\": \"triangle_empty\"},
-                {\"pattern\": \"circle_filled\"},
-                {\"pattern\": \"square_empty\"},
-                {\"pattern\": \"triangle_filled\"}
-            ],
-            \"correct_answer\": 0,
-            \"explanation\": \"Each column shows the same shape progressing from filled to half-filled to empty.\",
-            \"time_limit_seconds\": 80
-        },
-        {
-            \"question_type\": \"matrix_reasoning\",
-            \"difficulty\": \"hard\",
-            \"question_text\": \"Which figure logically belongs on the spot of the question mark?\",
-            \"pattern_data\": {
-                \"grid\": [
-                    [{\"pattern\": \"horizontal_lines_3\"}, {\"pattern\": \"horizontal_lines_2\"}, {\"pattern\": \"horizontal_lines_1\"}],
-                    [{\"pattern\": \"vertical_lines_2\"}, {\"pattern\": \"vertical_lines_1\"}, {\"pattern\": \"vertical_lines_3\"}],
-                    [{\"pattern\": \"diagonal_lines_1\"}, {\"pattern\": \"diagonal_lines_3\"}, {\"pattern\": \"missing\"}]
-                ]
-            },
-            \"options\": [
-                {\"pattern\": \"diagonal_lines_2\"},
-                {\"pattern\": \"horizontal_lines_2\"},
-                {\"pattern\": \"vertical_lines_2\"},
-                {\"pattern\": \"diagonal_lines_1\"}
-            ],
-            \"correct_answer\": 0,
-            \"explanation\": \"The pattern rotates positions: 3-2-1 becomes 2-1-3 becomes 1-3-2.\",
-            \"time_limit_seconds\": 90
-        },
-        {
-            \"question_type\": \"matrix_reasoning\",
-            \"difficulty\": \"easy\",
-            \"question_text\": \"Which figure logically belongs on the spot of the question mark?\",
-            \"pattern_data\": {
-                \"grid\": [
-                    [{\"pattern\": \"square_filled\"}, {\"pattern\": \"square_empty\"}, {\"pattern\": \"square_half\"}],
-                    [{\"pattern\": \"circle_filled\"}, {\"pattern\": \"circle_empty\"}, {\"pattern\": \"circle_half\"}],
-                    [{\"pattern\": \"triangle_filled\"}, {\"pattern\": \"triangle_empty\"}, {\"pattern\": \"missing\"}]
-                ]
-            },
-            \"options\": [
-                {\"pattern\": \"triangle_half\"},
-                {\"pattern\": \"square_half\"},
-                {\"pattern\": \"circle_filled\"},
-                {\"pattern\": \"triangle_filled\"}
-            ],
-            \"correct_answer\": 0,
-            \"explanation\": \"Each row shows the same shape in different fill states: filled, empty, half-filled.\",
-            \"time_limit_seconds\": 65
-        },
-        {
-            \"question_type\": \"matrix_reasoning\",
-            \"difficulty\": \"medium\",
-            \"question_text\": \"Which figure logically belongs on the spot of the question mark?\",
-            \"pattern_data\": {
-                \"grid\": [
-                    [{\"pattern\": \"vertical_lines_1\"}, {\"pattern\": \"diagonal_lines_1\"}, {\"pattern\": \"horizontal_lines_1\"}],
-                    [{\"pattern\": \"vertical_lines_2\"}, {\"pattern\": \"diagonal_lines_2\"}, {\"pattern\": \"horizontal_lines_2\"}],
-                    [{\"pattern\": \"vertical_lines_3\"}, {\"pattern\": \"diagonal_lines_3\"}, {\"pattern\": \"missing\"}]
-                ]
-            },
-            \"options\": [
-                {\"pattern\": \"horizontal_lines_3\"},
-                {\"pattern\": \"vertical_lines_3\"},
-                {\"pattern\": \"diagonal_lines_1\"},
-                {\"pattern\": \"horizontal_lines_1\"}
-            ],
-            \"correct_answer\": 0,
-            \"explanation\": \"Each row maintains the same line count across different orientations.\",
-            \"time_limit_seconds\": 75
-        },
-        {
-            \"question_type\": \"matrix_reasoning\",
-            \"difficulty\": \"hard\",
-            \"question_text\": \"Which figure logically belongs on the spot of the question mark?\",
-            \"pattern_data\": {
-                \"grid\": [
-                    [{\"pattern\": \"circle_filled\"}, {\"pattern\": \"triangle_empty\"}, {\"pattern\": \"square_half\"}],
-                    [{\"pattern\": \"square_filled\"}, {\"pattern\": \"circle_empty\"}, {\"pattern\": \"triangle_half\"}],
-                    [{\"pattern\": \"triangle_filled\"}, {\"pattern\": \"square_empty\"}, {\"pattern\": \"missing\"}]
-                ]
-            },
-            \"options\": [
-                {\"pattern\": \"circle_half\"},
-                {\"pattern\": \"triangle_filled\"},
-                {\"pattern\": \"square_filled\"},
-                {\"pattern\": \"circle_empty\"}
-            ],
-            \"correct_answer\": 0,
-            \"explanation\": \"Each row and column contains each shape exactly once, and each fill type exactly once.\",
-            \"time_limit_seconds\": 90
-        },
-        {
-            \"question_type\": \"matrix_reasoning\",
-            \"difficulty\": \"medium\",
-            \"question_text\": \"Which figure logically belongs on the spot of the question mark?\",
-            \"pattern_data\": {
-                \"grid\": [
-                    [{\"pattern\": \"horizontal_lines_2\"}, {\"pattern\": \"vertical_lines_1\"}, {\"pattern\": \"diagonal_lines_3\"}],
-                    [{\"pattern\": \"diagonal_lines_2\"}, {\"pattern\": \"horizontal_lines_1\"}, {\"pattern\": \"vertical_lines_3\"}],
-                    [{\"pattern\": \"vertical_lines_2\"}, {\"pattern\": \"diagonal_lines_1\"}, {\"pattern\": \"missing\"}]
-                ]
-            },
-            \"options\": [
-                {\"pattern\": \"horizontal_lines_3\"},
-                {\"pattern\": \"vertical_lines_2\"},
-                {\"pattern\": \"diagonal_lines_2\"},
-                {\"pattern\": \"horizontal_lines_1\"}
-            ],
-            \"correct_answer\": 0,
-            \"explanation\": \"Each row contains one pattern with 1 line, one with 2 lines, and one with 3 lines.\",
-            \"time_limit_seconds\": 80
-        },
-        {
-            \"question_type\": \"matrix_reasoning\",
-            \"difficulty\": \"hard\",
-            \"question_text\": \"Which figure logically belongs on the spot of the question mark?\",
-            \"pattern_data\": {
-                \"grid\": [
-                    [{\"pattern\": \"triangle_filled\"}, {\"pattern\": \"square_half\"}, {\"pattern\": \"circle_empty\"}],
-                    [{\"pattern\": \"circle_filled\"}, {\"pattern\": \"triangle_half\"}, {\"pattern\": \"square_empty\"}],
-                    [{\"pattern\": \"square_filled\"}, {\"pattern\": \"circle_half\"}, {\"pattern\": \"missing\"}]
-                ]
-            },
-            \"options\": [
-                {\"pattern\": \"triangle_empty\"},
-                {\"pattern\": \"circle_filled\"},
-                {\"pattern\": \"square_half\"},
-                {\"pattern\": \"triangle_filled\"}
-            ],
-            \"correct_answer\": 0,
-            \"explanation\": \"Each shape appears once in each row and column, and each fill type appears once in each row and column.\",
-            \"time_limit_seconds\": 95
+            "id": str(i),
+            "question_text": q["question_text"],
+            "options": q["options"],
+            "category": q["category"]
         }
+        for i, q in enumerate(selected_questions)
     ]
+
+    await db.test_sessions.insert_one({
+        "test_id": test_id,
+        "questions": selected_questions,
+        "config": config.model_dump(),
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+
+    return {
+        "test_id": test_id,
+        "questions": questions_for_frontend,
+        "duration_minutes": num_questions
+    }
+
+@api_router.post("/test/submit", response_model=TestResult)
+async def submit_test(result: TestResultCreate):
+    test_session = await db.test_sessions.find_one({"test_id": result.test_id})
+    if not test_session:
+        raise HTTPException(status_code=404, detail="Test session not found")
+
+    questions = test_session["questions"]
+    correct_count = 0
+
+    for i, answer in enumerate(result.answers):
+        if i < len(questions) and answer == questions[i]["correct_answer"]:
+            correct_count += 1
+
+    total_questions = len(questions)
+    accuracy_percentage = (correct_count / total_questions) * 100 if total_questions > 0 else 0
     
-    for question_data in sample_questions:
-        question = IQQuestion(**question_data)
-        doc = question.model_dump()
-        doc['created_at'] = doc['created_at'].isoformat()
-        await db.iq_questions.insert_one(doc)
+    performance_level = get_performance_level(accuracy_percentage)
+
+    base_iq = 100
+    iq_variation = (accuracy_percentage - 50) * 0.6
+    mock_iq = int(base_iq + iq_variation)
+    mock_iq = max(80, min(145, mock_iq))
+
+    test_result = TestResult(
+        test_id=result.test_id,
+        correct_answers=correct_count,
+        total_questions=total_questions,
+        iq_score=mock_iq,
+        accuracy_percentage=accuracy_percentage,
+        performance_level=performance_level
+    )
+
+    result_doc = test_result.model_dump()
+    result_doc["timestamp"] = result_doc["timestamp"].isoformat()
+
+    await db.test_results.insert_one(result_doc)
+
+    return test_result
+
+@api_router.get("/test/result/{test_id}")
+async def get_test_result(test_id: str):
+    test_result = await db.test_results.find_one({"test_id": test_id}, {"_id": 0})
+    if not test_result:
+        raise HTTPException(status_code=404, detail="Test result not found")
+    
+    # Add calculated fields
+    test_result["incorrect_answers"] = test_result["total_questions"] - test_result["correct_answers"]
+    test_result["average_time_per_question"] = 45  # Mock value
+    test_result["iq_score_estimate"] = test_result["iq_score"]
+    
+    return test_result
+
+@api_router.post("/certificate/download")
+async def download_certificate(cert_request: CertificateRequest):
+    test_result = await db.test_results.find_one({"test_id": cert_request.test_id})
+    if not test_result:
+        raise HTTPException(status_code=404, detail="Test result not found")
+
+    # Save certificate request
+    await db.certificates.insert_one({
+        "test_id": cert_request.test_id,
+        "name": cert_request.name,
+        "email": cert_request.email,
+        "contact": cert_request.contact,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    # Decorative borders
+    c.setStrokeColor(colors.HexColor("#7c3aed"))
+    c.setLineWidth(3)
+    c.rect(40, 40, width - 80, height - 80)
+
+    c.setStrokeColor(colors.HexColor("#ec4899"))
+    c.setLineWidth(1)
+    c.rect(50, 50, width - 100, height - 100)
+
+    # Title
+    c.setFont("Helvetica-Bold", 36)
+    c.setFillColor(colors.HexColor("#7c3aed"))
+    c.drawCentredString(width / 2, height - 120, "Certificate of Achievement")
+
+    # Subtitle
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica", 16)
+    c.drawCentredString(width / 2, height - 160, "MindMeter IQ Intelligence Test")
+
+    # This certifies that text
+    c.setFont("Helvetica", 14)
+    c.drawCentredString(width / 2, height - 230, "This certifies that")
+
+    # Name
+    c.setFont("Helvetica-Bold", 32)
+    c.setFillColor(colors.HexColor("#1f2937"))
+    c.drawCentredString(width / 2, height - 280, cert_request.name)
+
+    # Achievement text
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica", 14)
+    c.drawCentredString(width / 2, height - 330, "has successfully completed the MindMeter IQ assessment")
+    c.drawCentredString(width / 2, height - 355, "with the following results:")
+
+    # Score section
+    c.setFont("Helvetica", 16)
+    c.drawCentredString(width / 2, height - 410, "IQ Score")
+
+    # IQ Score value
+    c.setFont("Helvetica-Bold", 48)
+    c.setFillColor(colors.HexColor("#7c3aed"))
+    c.drawCentredString(width / 2, height - 465, str(test_result["iq_score"]))
+
+    # Performance level
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica", 14)
+    c.drawCentredString(width / 2, height - 505, f"Performance Level: {test_result.get('performance_level', 'N/A')}")
+
+    # Stats
+    c.setFont("Helvetica", 12)
+    accuracy = test_result.get('accuracy_percentage', 0)
+    c.drawCentredString(width / 2, height - 540, f"Accuracy: {accuracy:.0f}% | Questions: {test_result['correct_answers']}/{test_result['total_questions']} correct")
+
+    # Date
+    c.setFont("Helvetica-Oblique", 11)
+    c.drawCentredString(width / 2, 120, f"Issued on {datetime.now(timezone.utc).strftime('%B %d, %Y')}")
+
+    # Footer
+    c.setFont("Helvetica", 10)
+    c.drawCentredString(width / 2, 80, "MindMeter - Intelligence Testing Platform")
+    c.drawCentredString(width / 2, 65, f"Certificate ID: {cert_request.test_id[:16]}")
+
+    c.save()
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition":
+            f"attachment; filename=MindMeter_Certificate_{cert_request.name.replace(' ', '_')}.pdf"
+        }
+    )
+
+# Add router
+app.include_router(api_router)
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("MindMeter IQ API starting up...")
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    logger.info("MindMeter IQ API shutting down...")
+    client.close()
