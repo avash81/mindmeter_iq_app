@@ -1,7 +1,8 @@
-import { useState } from "react";
+import React from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import LandingPage from "@/components/LandingPage";
+import { Toaster } from "@/components/ui/sonner";
+import HomePage from "@/components/HomePage";
 import TestPage from "@/components/TestPage";
 import ResultsPage from "@/components/ResultsPage";
 
@@ -10,10 +11,11 @@ function App() {
     <div className="App">
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<HomePage />} />
           <Route path="/test" element={<TestPage />} />
-          <Route path="/results" element={<ResultsPage />} />
+          <Route path="/results/:sessionId" element={<ResultsPage />} />
         </Routes>
+        <Toaster position="top-center" />
       </BrowserRouter>
     </div>
   );
